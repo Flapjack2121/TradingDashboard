@@ -114,23 +114,28 @@ class BacktestResult:
 class _OpenPosition:
     """One live simulated position during the bar loop."""
     ticker: str
-    direction: str              # "BUY" or "SELL"
+    strategy: str               # StrategyName value (e.g. "Trend Following")
+    side: str                   # "BUY" or "SELL"
     entry_price: float          # filled price (incl. slippage)
     entry_time: datetime
     stop_loss: float
     take_profit: float
-    quantity: float
+    size: float                 # share count
     commission_paid: float      # entry-side cost
+    slippage_paid: float        # entry-side slippage cost
+    strategy_score: float       # captured at signal time
+    ml_score: float
+    final_score: float
 
     def filled_tp(self, bar_high: float, bar_low: float) -> bool:
         """Check if this bar reaches the take-profit level."""
-        if self.direction == "BUY":
+        if self.side == "BUY":
             return bar_high >= self.take_profit
         return bar_low <= self.take_profit
 
     def filled_sl(self, bar_high: float, bar_low: float) -> bool:
         """Check if this bar reaches the stop-loss level."""
-        if self.direction == "BUY":
+        if self.side == "BUY":
             return bar_low <= self.stop_loss
         return bar_high >= self.stop_loss
 
@@ -266,17 +271,24 @@ class Backtester:
                 float(next_bar["Open"]), signal.direction
             )
             entry_time = _bar_time(next_bar)
-            commission = fill_price * decision.quantity * RISK.commission_per_trade_pct
+            entry_notional = fill_price * decision.quantity
+            commission = entry_notional * RISK.commission_per_trade_pct
+            entry_slippage = entry_notional * RISK.slippage_pct
 
             open_positions[ticker] = _OpenPosition(
                 ticker=ticker,
-                direction=signal.direction,
+                strategy=signal.strategy,
+                side=signal.direction,
                 entry_price=fill_price,
                 entry_time=entry_time,
                 stop_loss=signal.stop_loss,
                 take_profit=signal.take_profit,
-                quantity=decision.quantity,
+                size=decision.quantity,
                 commission_paid=commission,
+                slippage_paid=entry_slippage,
+                strategy_score=signal.strategy_score,
+                ml_score=signal.ml_score,
+                final_score=signal.final_score,
             )
             risk_mgr.register_open(when=entry_time)
 
@@ -288,7 +300,7 @@ class Backtester:
                 pos=pos,
                 exit_price=float(last_bar["Close"]),
                 exit_time=_bar_time(last_bar),
-                reason="end_of_data",
+                reason="END_OF_DATA",
                 risk_mgr=risk_mgr,
             )
             trades.append(trade)
@@ -357,13 +369,13 @@ class Backtester:
 
         if hit_tp:
             exit_price = pos.take_profit
-            reason = "take_profit"
+            reason = "TP"
         elif hit_sl:
             exit_price = pos.stop_loss
-            reason = "stop_loss"
+            reason = "SL"
         elif is_last_bar:
             exit_price = bar_close
-            reason = "end_of_data"
+            reason = "END_OF_DATA"
         else:
             return None
 
@@ -388,38 +400,41 @@ class Backtester:
         risk_mgr: RiskManager,
     ) -> Trade:
         """Build a Trade dataclass from a closed position."""
-        slip = exit_price * RISK.slippage_pct
-        if pos.direction == "BUY":
-            actual_exit = exit_price - slip
-            gross_pnl = (actual_exit - pos.entry_price) * pos.quantity
+        # Apply exit-side slippage to the fill price.
+        slip_per_share = exit_price * RISK.slippage_pct
+        if pos.side == "BUY":
+            actual_exit = exit_price - slip_per_share
         else:
-            actual_exit = exit_price + slip
-            gross_pnl = (pos.entry_price - actual_exit) * pos.quantity
+            actual_exit = exit_price + slip_per_share
 
-        exit_commission = actual_exit * pos.quantity * RISK.commission_per_trade_pct
+        exit_notional = actual_exit * pos.size
+        exit_commission = exit_notional * RISK.commission_per_trade_pct
+        exit_slippage = exit_notional * RISK.slippage_pct
+
         total_commission = pos.commission_paid + exit_commission
-        slippage_cost = (
-            pos.entry_price * pos.quantity * RISK.slippage_pct
-            + actual_exit * pos.quantity * RISK.slippage_pct
-        )
-        net_pnl = gross_pnl - total_commission
+        total_slippage = pos.slippage_paid + exit_slippage
 
         trade = Trade(
             ticker=pos.ticker,
-            direction=pos.direction,
+            strategy=pos.strategy,
+            side=pos.side,                       # type: ignore[arg-type]
+            entry_time=pd.Timestamp(pos.entry_time),
             entry_price=pos.entry_price,
+            exit_time=pd.Timestamp(exit_time),
             exit_price=actual_exit,
-            entry_time=pos.entry_time,
-            exit_time=exit_time,
-            quantity=pos.quantity,
-            gross_pnl=gross_pnl,
+            size=pos.size,
+            stop_loss=pos.stop_loss,
+            take_profit=pos.take_profit,
+            strategy_score=pos.strategy_score,
+            ml_score=pos.ml_score,
+            final_score=pos.final_score,
+            exit_reason=reason,                  # type: ignore[arg-type]
             commission=total_commission,
-            slippage=slippage_cost,
-            net_pnl=net_pnl,
-            exit_reason=reason,
+            slippage=total_slippage,
         )
 
-        risk_mgr.register_close(pnl=net_pnl, when=exit_time)
+        # Trade.net_pnl is a property; register the close with its actual value.
+        risk_mgr.register_close(pnl=trade.net_pnl, when=exit_time)
         return trade
 
 
