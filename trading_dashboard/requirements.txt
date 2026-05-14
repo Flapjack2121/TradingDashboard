@@ -1,0 +1,54 @@
+# =============================================================================
+# Trading Dashboard - Python Dependencies
+# =============================================================================
+# Install with:   pip install -r requirements.txt
+# Python target:  >=3.10, <3.13
+# -----------------------------------------------------------------------------
+
+# ---- Core data stack --------------------------------------------------------
+numpy>=1.26,<2.2
+pandas>=2.1,<2.3
+scipy>=1.11,<1.15
+
+# ---- Market data ------------------------------------------------------------
+yfinance>=0.2.40,<0.3
+requests>=2.31,<3.0
+urllib3>=2.0,<3.0
+
+# ---- Broker / Execution -----------------------------------------------------
+# alpaca-py is the current, officially supported Alpaca SDK.
+alpaca-py>=0.30,<0.40
+
+# ---- Visualization & UI -----------------------------------------------------
+streamlit>=1.36,<2.0
+plotly>=5.22,<6.0
+altair>=5.3,<6.0
+
+# ---- Machine Learning -------------------------------------------------------
+scikit-learn>=1.4,<1.6
+joblib>=1.3,<2.0
+
+# Optional gradient boosters (model.py is structured to use them if installed)
+# Uncomment to enable. They are NOT required for the default RandomForest path.
+# xgboost>=2.0,<3.0
+# lightgbm>=4.3,<5.0
+
+# ---- Config / Environment ---------------------------------------------------
+python-dotenv>=1.0,<2.0
+pydantic>=2.6,<3.0
+
+# ---- Time & Timezones -------------------------------------------------------
+pytz>=2024.1
+python-dateutil>=2.9,<3.0
+
+# ---- Caching / Performance --------------------------------------------------
+diskcache>=5.6,<6.0
+
+# ---- Utilities --------------------------------------------------------------
+tqdm>=4.66,<5.0
+tabulate>=0.9,<1.0
+rich>=13.7,<14.0
+
+# ---- Testing (optional, used by local dev only) -----------------------------
+pytest>=8.0,<9.0
+pytest-mock>=3.12,<4.0
