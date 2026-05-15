@@ -43,6 +43,9 @@ from utils.indicators import (
 
 logger = get_logger("strategy")
 
+# Set to True from the UI (app.py) to bypass the global filter for exploration.
+BYPASS_GLOBAL_FILTER: bool = False
+
 
 class Strategy(ABC):
     """
@@ -107,7 +110,11 @@ class Strategy(ABC):
     # Global trade filter (MANDATORY per spec)
     # ------------------------------------------------------------------
     @staticmethod
-    def passes_global_filter(df: pd.DataFrame, direction: Side) -> bool:
+    def passes_global_filter(
+        df: pd.DataFrame,
+        direction: Side,
+        bypass: bool = False,
+    ) -> bool:
         """
         Verify ALL three global conditions at the latest bar:
 
@@ -115,8 +122,12 @@ class Strategy(ABC):
             2. ATR:      latest ATR strictly greater than its 20-period MA
             3. Volume:   latest Volume strictly greater than its 20-period MA
 
+        Pass bypass=True to skip the filter (exploration / debug mode).
         NaN values from warm-up periods are treated as failures (return False).
         """
+        if bypass or BYPASS_GLOBAL_FILTER:
+            return True
+
         if len(df) < INDICATORS.ema_slow + INDICATORS.atr_avg_period:
             return False
 
@@ -135,11 +146,35 @@ class Strategy(ABC):
 
         # Use the highest volume of the last 2 bars so that an incomplete
         # intraday bar (today's partial session) doesn't kill every signal.
-        # Yesterday's complete bar always has full volume recorded.
         vol_prev = float(df["Volume"].iloc[-2]) if len(df) >= 2 else vol_now
         vol_ok = max(vol_now, vol_prev) > vol_ma
 
         return bool(trend_ok and atr_ok and vol_ok)
+
+    @staticmethod
+    def global_filter_detail(df: pd.DataFrame, direction: Side) -> dict:
+        """Return per-condition booleans for diagnostics / the UI."""
+        if len(df) < INDICATORS.ema_slow + INDICATORS.atr_avg_period:
+            return {"trend": False, "atr": False, "volume": False,
+                    "fast": 0.0, "slow": 0.0, "atr_now": 0.0,
+                    "atr_ma": 0.0, "vol_ratio": 0.0}
+        fast = float(ema(df["Close"], INDICATORS.ema_fast).iloc[-1])
+        slow = float(ema(df["Close"], INDICATORS.ema_slow).iloc[-1])
+        atr_now = float(atr(df).iloc[-1])
+        atr_ma = float(atr_average(df).iloc[-1])
+        vol_now = float(df["Volume"].iloc[-1])
+        vol_prev = float(df["Volume"].iloc[-2]) if len(df) >= 2 else vol_now
+        vol_ma = float(volume_average(df["Volume"]).iloc[-1])
+        return {
+            "trend": bool((fast > slow) if direction == "BUY" else (fast < slow)),
+            "atr": bool(atr_now > atr_ma),
+            "volume": bool(max(vol_now, vol_prev) > vol_ma),
+            "ema_fast": round(fast, 2),
+            "ema_slow": round(slow, 2),
+            "atr_now": round(atr_now, 4),
+            "atr_ma": round(atr_ma, 4),
+            "vol_ratio": round(max(vol_now, vol_prev) / vol_ma, 2) if vol_ma > 0 else 0.0,
+        }
 
     # ------------------------------------------------------------------
     # Confluence helpers (each maps to one factor in the 25/15/20/20/20 grid)

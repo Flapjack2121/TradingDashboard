@@ -39,6 +39,8 @@ from config import (
 from utils.helpers import Signal, Trade, combine_final_score, compute_confluence_score
 
 # ── modules ──────────────────────────────────────────────────────────────────
+import strategies.base_strategy as _base_strategy
+
 from alerts.notifier import get_dispatcher
 from analysis.performance import compute_metrics, equity_curve, trades_to_dataframe
 from backtesting.backtester import BacktestResult, run_backtest, run_walk_forward
@@ -385,8 +387,13 @@ def _tab_signals(
     ranker: Optional[TradeRanker],
 ) -> None:
     """Signals tab: scan → table → cards → price chart."""
-    min_strat = float(st.session_state.get("sb_min_score", 60))
-    min_final = float(st.session_state.get("sb_min_final", 0.60))
+    min_strat = float(st.session_state.get("sb_min_score", 40))
+    min_final = float(st.session_state.get("sb_min_final", 0.40))
+
+    # Sync the module-level bypass flag so all strategies pick it up.
+    _base_strategy.BYPASS_GLOBAL_FILTER = bool(
+        st.session_state.get("bypass_global_filter", False)
+    )
 
     with st.spinner("Scanning universe…"):
         signals = _scan_universe(
@@ -406,8 +413,30 @@ def _tab_signals(
             st.warning(f"No data returned for: {nodata}")
 
         if hasdata:
+            from strategies.base_strategy import Strategy as _S
+            # Show global-filter breakdown for first ticker both BUY and SELL
+            sample_ticker, sample_df = next(iter(hasdata.items()))
+            try:
+                from utils.indicators import with_indicators as _wi
+                _sample_prep = _wi(sample_df)
+                for _dir in ("BUY", "SELL"):
+                    _detail = _S.global_filter_detail(_sample_prep, _dir)
+                    _pass = all([_detail["trend"], _detail["atr"], _detail["volume"]])
+                    st.write(
+                        f"**{sample_ticker} {_dir} global filter:** "
+                        f"trend={'✅' if _detail['trend'] else '❌'} "
+                        f"(EMA50={_detail['ema_fast']} vs EMA200={_detail['ema_slow']}) | "
+                        f"ATR={'✅' if _detail['atr'] else '❌'} "
+                        f"({_detail['atr_now']:.3f} vs avg {_detail['atr_ma']:.3f}) | "
+                        f"Vol={'✅' if _detail['volume'] else '❌'} "
+                        f"(ratio {_detail['vol_ratio']}x) → "
+                        f"{'**PASS**' if _pass else '**FAIL**'}"
+                    )
+            except Exception as _ex:
+                st.write(f"Filter detail unavailable: {_ex}")
+
             debug_rows = []
-            for ticker_d, df_d in list(hasdata.items())[:5]:   # first 5 tickers
+            for ticker_d, df_d in list(hasdata.items())[:5]:
                 diag = _run_strategies_debug(
                     df_d, ticker_d, region.value, strategy_names, timeframe, ranker
                 )
@@ -422,6 +451,7 @@ def _tab_signals(
                     })
             if debug_rows:
                 st.dataframe(pd.DataFrame(debug_rows), use_container_width=True, hide_index=True)
+            st.info("💡 Tip: enable **Bypass global filter** in the sidebar to see signals in calm/non-trending markets.")
 
     if not signals:
         st.info("No signals meeting the score threshold right now. Open the Diagnostics expander above to see raw strategy output.")
@@ -820,6 +850,16 @@ def _build_sidebar() -> Tuple[Region, List[str], List[str], Timeframe]:
             0.40, step=0.05, key="sb_min_final",
             help="Final score = 50% strategy score + 50% ML score. "
                  "With no ML model, max is ~0.40. Raise once ML is trained."
+        )
+
+        # Filter controls
+        st.divider()
+        st.checkbox(
+            "Bypass global filter",
+            value=False,
+            key="bypass_global_filter",
+            help="Skip the mandatory EMA-trend + ATR + Volume gate. "
+                 "Use this to explore raw strategy signals in calm markets.",
         )
 
         # Alerts toggle
