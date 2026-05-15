@@ -741,23 +741,94 @@ def _tab_portfolio(alpaca: AlpacaClient) -> None:
 
 
 def _tab_ml(ranker: Optional[TradeRanker]) -> None:
-    """ML diagnostics tab: model status + metrics + feature importances."""
+    """ML diagnostics tab: model status + train button + metrics + feature importances."""
     st.subheader("ML Model Status")
 
-    if ranker is None or not ranker.is_trained:
-        st.warning(
-            "No trained model found. Run `python -m ml.train` from the "
-            "`trading_dashboard/` directory to train the model."
+    # ── Train model button ────────────────────────────────────────────────────
+    st.markdown("### Train the Model")
+    st.info(
+        "Training scans historical data for all tickers, runs every strategy "
+        "as a backtest, labels each trade win/loss, and fits a RandomForest "
+        "classifier. Takes **2–5 minutes** depending on how many tickers you include. "
+        "Run this once — then re-run whenever you want to refresh the model."
+    )
+
+    from config import METRICS_PATH, Region as _R, Timeframe as _TF
+
+    col_r, col_n, col_tf = st.columns(3)
+    with col_r:
+        train_regions = st.multiselect(
+            "Regions to train on",
+            options=["us", "europe", "asia"],
+            default=["us"],
+            key="train_regions",
         )
-        st.code("cd trading_dashboard\npython -m ml.train --regions us --max-tickers 5")
+    with col_n:
+        max_tickers = st.slider(
+            "Tickers per region",
+            min_value=3, max_value=20, value=8, step=1,
+            key="train_max_tickers",
+            help="More tickers = better model but slower training. 5–10 is a good start.",
+        )
+    with col_tf:
+        train_tf = st.selectbox(
+            "Timeframe",
+            options=[tf.value for tf in _TF],
+            index=0,
+            key="train_tf",
+        )
+
+    if st.button("🚀 Train Model Now", type="primary", key="train_btn"):
+        from ml.train import _parse_regions, train_pipeline
+        import json as _json
+
+        prog = st.progress(0, text="Starting training…")
+        status = st.empty()
+
+        try:
+            status.info("Fetching historical data and running backtests…")
+            prog.progress(20, text="Fetching data & running backtests…")
+
+            regions = _parse_regions(train_regions or ["us"])
+            result = train_pipeline(
+                regions=regions,
+                timeframe=_TF(train_tf),
+                max_tickers_per_region=max_tickers,
+                save_artifacts=True,
+            )
+            prog.progress(100, text="Done!")
+
+            if result.model is None:
+                status.error(
+                    "Training failed — not enough trades were collected. "
+                    "Try adding more tickers or a longer timeframe."
+                )
+            else:
+                m = result.metrics
+                status.success(
+                    f"Model trained on **{result.n_trades}** trades.  "
+                    f"Accuracy: **{m.get('accuracy', 0):.1%}**  |  "
+                    f"F1: **{m.get('f1', 0):.3f}**  |  "
+                    f"ROC-AUC: **{m.get('roc_auc', 0):.3f}**"
+                )
+                st.balloons()
+                # Force reload of the cached ranker on next run
+                _get_ranker.clear()
+                st.info("Model saved. Click **Refresh Data** in the sidebar to activate it.")
+        except Exception as _exc:
+            prog.progress(100, text="Error")
+            status.error(f"Training error: {_exc}")
+
+    st.divider()
+
+    # ── Status & metrics ──────────────────────────────────────────────────────
+    if ranker is None or not ranker.is_trained:
+        st.warning("No trained model loaded yet. Use the button above to train one.")
         return
 
-    from config import METRICS_PATH
-    col1, col2 = st.columns(2)
-    col1.success("Model loaded and ready.")
-    col2.caption(f"Artifact: `{MODEL_PATH.name}`")
+    st.success("Model loaded and ready.")
+    st.caption(f"Artifact: `{MODEL_PATH.name}`")
 
-    # ── Training metrics ──────────────────────────────────────────────────────
     st.subheader("Training Metrics")
     if METRICS_PATH.exists():
         import json
