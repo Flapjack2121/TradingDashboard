@@ -557,6 +557,17 @@ def with_indicators(df: pd.DataFrame) -> pd.DataFrame:
     Strategies and the ML feature pipeline call this once per ticker.
     """
     out = df.copy()
+
+    # Flatten MultiIndex columns that some yfinance versions return for
+    # single-ticker downloads (e.g. ("Close", "AAPL") -> "Close").
+    if isinstance(out.columns, pd.MultiIndex):
+        out.columns = [
+            col[0] if isinstance(col, tuple) else col
+            for col in out.columns
+        ]
+    # Ensure column values are plain strings (not numpy str_ etc.)
+    out.columns = [str(c) for c in out.columns]
+
     out["ema_fast"] = ema(out["Close"], INDICATORS.ema_fast)
     out["ema_slow"] = ema(out["Close"], INDICATORS.ema_slow)
     out["rsi"] = rsi(out["Close"])

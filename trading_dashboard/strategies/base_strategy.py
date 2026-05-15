@@ -132,7 +132,13 @@ class Strategy(ABC):
 
         trend_ok = (fast > slow) if direction == "BUY" else (fast < slow)
         atr_ok = atr_now > atr_ma
-        vol_ok = vol_now > vol_ma
+
+        # Use the highest volume of the last 2 bars so that an incomplete
+        # intraday bar (today's partial session) doesn't kill every signal.
+        # Yesterday's complete bar always has full volume recorded.
+        vol_prev = float(df["Volume"].iloc[-2]) if len(df) >= 2 else vol_now
+        vol_ok = max(vol_now, vol_prev) > vol_ma
+
         return bool(trend_ok and atr_ok and vol_ok)
 
     # ------------------------------------------------------------------
