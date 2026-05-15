@@ -463,31 +463,67 @@ def _tab_signals(
         st.info("No signals meeting the score threshold right now. Open the Diagnostics expander above to see raw strategy output.")
         return
 
-    st.success(f"Found **{len(signals)}** actionable signal(s).")
+    # ── Direction filter ──────────────────────────────────────────────────────
+    dir_filter = st.radio(
+        "Show signals",
+        options=["All", "BUY only", "SELL only"],
+        horizontal=True,
+        key="sig_dir_filter",
+    )
+    if dir_filter == "BUY only":
+        signals = [s for s in signals if s.direction == "BUY"]
+    elif dir_filter == "SELL only":
+        signals = [s for s in signals if s.direction == "SELL"]
+
+    if not signals:
+        st.info(f"No {dir_filter.replace(' only', '')} signals right now.")
+        return
+
+    st.success(f"Found **{len(signals)}** signal(s) · {sum(s.direction=='BUY' for s in signals)} BUY · {sum(s.direction=='SELL' for s in signals)} SELL")
 
     # ── Signal table ──────────────────────────────────────────────────────────
     st.subheader("Signal Table")
-    df_table = _signal_table(signals)
+    rows = []
+    for sig in signals:
+        # Estimate hold time from timeframe + ATR-based TP distance.
+        # TP = 3× ATR from entry → takes ~3-8 bars to reach on average.
+        tf = sig.timeframe
+        if tf == "1D":
+            hold_est = "3–8 trading days"
+        elif tf == "4H":
+            hold_est = "12–32 hours (3–8 bars)"
+        elif tf == "1H":
+            hold_est = "3–8 hours"
+        else:
+            hold_est = "3–8 bars"
+        row = sig.as_row()
+        row["Est. Hold"] = hold_est
+        row["Reason"] = sig.reason or "—"
+        rows.append(row)
+
+    df_table = pd.DataFrame(rows) if rows else pd.DataFrame()
     if not df_table.empty:
+        # Reorder: trade details first, then scores
+        cols_order = [
+            "Ticker", "Direction", "Strategy", "Timeframe",
+            "Entry", "Stop Loss", "Take Profit", "R:R",
+            "Est. Hold", "Strategy Score", "Final Score",
+            "Reason", "Timestamp",
+        ]
+        df_table = df_table[[c for c in cols_order if c in df_table.columns]]
         styled = df_table.style
         if "Direction" in df_table.columns:
             styled = styled.applymap(_color_direction, subset=["Direction"])
         if "Strategy Score" in df_table.columns:
             styled = styled.applymap(_color_score, subset=["Strategy Score"])
-        if "Final Score" in df_table.columns:
-            styled = styled.applymap(
-                lambda v: _color_score(float(v) * 100, SCORING.min_strategy_score),
-                subset=["Final Score"],
-            )
         styled = styled.format({
             "Entry": "{:.2f}", "Stop Loss": "{:.2f}", "Take Profit": "{:.2f}",
-            "R:R": "{:.2f}", "Strategy Score": "{:.1f}",
-            "ML Score": "{:.3f}", "Final Score": "{:.3f}",
+            "R:R": "{:.2f}", "Strategy Score": "{:.1f}", "Final Score": "{:.3f}",
         })
         st.dataframe(styled, use_container_width=True, hide_index=True)
 
     # ── Signal cards (top 5) ──────────────────────────────────────────────────
-    st.subheader("Top Signals")
+    st.subheader("Trade Setup Details")
     top = signals[:5]
     for sig in top:
         dir_color = "#22c55e" if sig.direction == "BUY" else "#ef4444"
@@ -498,32 +534,60 @@ def _tab_signals(
             for k, v in breakdown.items()
             if k != "total"
         )
+        risk_pct = abs(sig.entry - sig.stop_loss) / sig.entry * 100 if sig.entry else 0
+        reward_pct = abs(sig.take_profit - sig.entry) / sig.entry * 100 if sig.entry else 0
+        tf = sig.timeframe
+        if tf == "1D":
+            hold_est = "3–8 trading days"
+        elif tf == "4H":
+            hold_est = "12–32 hours"
+        elif tf == "1H":
+            hold_est = "3–8 hours"
+        else:
+            hold_est = "3–8 bars"
         st.markdown(
             f"""
             <div class="signal-card">
                 <h4>
                   <span style="color:{dir_color}">{sig.direction}</span>
-                  {sig.ticker}
+                  &nbsp;{sig.ticker}
                   <span style="color:#9ca3af; font-size:0.8rem"> · {sig.strategy} · {sig.timeframe}</span>
                 </h4>
                 <span class="badge" style="background:{score_color}22;color:{score_color}">
                     Score {sig.strategy_score:.0f}/100
                 </span>
                 &nbsp;
-                <span class="badge" style="background:#3b82f622;color:#3b82f6">
-                    ML {sig.ml_score:.2f} ({sig.ml_band})
-                </span>
-                &nbsp;
                 <span class="badge" style="background:#6366f122;color:#6366f1">
                     Final {sig.final_score:.2f}
                 </span>
-                <p style="margin:8px 0 4px; font-size:0.85rem; color:#9ca3af">{breakdown_str}</p>
-                <p style="margin:0; font-size:0.85rem">
-                    Entry <b>{sig.entry:.2f}</b>
-                    &nbsp;|&nbsp; SL <b style="color:#ef4444">{sig.stop_loss:.2f}</b>
-                    &nbsp;|&nbsp; TP <b style="color:#22c55e">{sig.take_profit:.2f}</b>
-                    &nbsp;|&nbsp; R:R <b>{sig.rr_ratio:.2f}</b>
+                &nbsp;
+                <span class="badge" style="background:#8b5cf622;color:#8b5cf6">
+                    Hold ~{hold_est}
+                </span>
+                <p style="margin:10px 0 6px; font-size:0.85rem; color:#e2e8f0;
+                          background:#1e2535; padding:8px 12px; border-radius:6px;
+                          border-left:3px solid {dir_color}">
+                    {sig.reason or 'No reason provided'}
                 </p>
+                <table style="width:100%;border-collapse:collapse;font-size:0.85rem;margin-top:6px">
+                  <tr>
+                    <td style="padding:4px 12px 4px 0;color:#9ca3af">Entry</td>
+                    <td style="padding:4px 12px 4px 0"><b>{sig.entry:.2f}</b></td>
+                    <td style="padding:4px 12px 4px 0;color:#9ca3af">Stop Loss</td>
+                    <td style="padding:4px 12px 4px 0"><b style="color:#ef4444">{sig.stop_loss:.2f}</b>
+                      <span style="color:#9ca3af;font-size:0.75rem"> ({risk_pct:.1f}% risk)</span></td>
+                    <td style="padding:4px 12px 4px 0;color:#9ca3af">Take Profit</td>
+                    <td style="padding:4px 0"><b style="color:#22c55e">{sig.take_profit:.2f}</b>
+                      <span style="color:#9ca3af;font-size:0.75rem"> ({reward_pct:.1f}% gain)</span></td>
+                  </tr>
+                  <tr>
+                    <td style="padding:4px 12px 4px 0;color:#9ca3af">R:R Ratio</td>
+                    <td style="padding:4px 12px 4px 0"><b>{sig.rr_ratio:.2f}</b></td>
+                    <td colspan="4" style="padding:4px 0;color:#9ca3af;font-size:0.8rem">
+                      {breakdown_str}
+                    </td>
+                  </tr>
+                </table>
             </div>
             """,
             unsafe_allow_html=True,
@@ -933,9 +997,10 @@ def _build_sidebar() -> Tuple[Region, List[str], List[str], Timeframe]:
         )
         st.slider(
             "Min Final Score", 0.0, 1.0,
-            0.40, step=0.05, key="sb_min_final",
+            0.20, step=0.05, key="sb_min_final",
             help="Final score = 50% strategy score + 50% ML score. "
-                 "With no ML model, max is ~0.40. Raise once ML is trained."
+                 "Without a trained ML model the max achievable is ~0.40. "
+                 "Keep at 0.20 until ML is trained, then raise to 0.50+."
         )
 
         # Filter controls

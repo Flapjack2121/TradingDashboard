@@ -54,7 +54,7 @@ ATR_FILTER_THRESHOLD: float = 0.90
 # Volume: previous completed bar must be >= 80% of the 20-period average.
 # We use the PREVIOUS bar (iloc[-2]) because today's intraday bar is
 # incomplete until market close and always understates volume.
-VOL_FILTER_THRESHOLD: float = 0.80
+VOL_FILTER_THRESHOLD: float = 0.70
 
 
 class Strategy(ABC):
