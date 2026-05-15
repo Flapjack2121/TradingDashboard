@@ -413,28 +413,35 @@ def _tab_signals(
             st.warning(f"No data returned for: {nodata}")
 
         if hasdata:
-            from strategies.base_strategy import Strategy as _S
-            # Show global-filter breakdown for first ticker both BUY and SELL
-            sample_ticker, sample_df = next(iter(hasdata.items()))
-            try:
-                from utils.indicators import with_indicators as _wi
-                _sample_prep = _wi(sample_df)
-                for _dir in ("BUY", "SELL"):
-                    _detail = _S.global_filter_detail(_sample_prep, _dir)
-                    _pass = all([_detail["trend"], _detail["atr"], _detail["volume"]])
-                    st.write(
-                        f"**{sample_ticker} {_dir} global filter:** "
-                        f"trend={'✅' if _detail['trend'] else '❌'} "
-                        f"(EMA50={_detail['ema_fast']} vs EMA200={_detail['ema_slow']}) | "
-                        f"ATR={'✅' if _detail['atr'] else '❌'} "
-                        f"({_detail['atr_now']:.3f} vs avg {_detail['atr_ma']:.3f}) | "
-                        f"Vol={'✅' if _detail['volume'] else '❌'} "
-                        f"(ratio {_detail['vol_ratio']}x) → "
-                        f"{'**PASS**' if _pass else '**FAIL**'}"
-                    )
-            except Exception as _ex:
-                st.write(f"Filter detail unavailable: {_ex}")
+            from strategies.base_strategy import Strategy as _S, ATR_FILTER_THRESHOLD, VOL_FILTER_THRESHOLD
+            from utils.indicators import with_indicators as _wi
 
+            # ── Global filter summary table (one row per ticker) ──────────
+            st.markdown("**Global filter per ticker** (first 10 tickers, BUY direction)")
+            filter_rows = []
+            for _t, _df in list(hasdata.items())[:10]:
+                try:
+                    _prep = _wi(_df)
+                    _d = _S.global_filter_detail(_prep, "BUY")
+                    filter_rows.append({
+                        "Ticker": _t,
+                        "Trend": "✅" if _d["trend"] else "❌",
+                        "EMA50": _d["ema_fast"],
+                        "EMA200": _d["ema_slow"],
+                        f"ATR≥{ATR_FILTER_THRESHOLD:.0%}avg": "✅" if _d["atr"] else "❌",
+                        "ATR now": _d["atr_now"],
+                        "ATR avg": _d["atr_ma"],
+                        f"Vol≥{VOL_FILTER_THRESHOLD:.0%}avg": "✅" if _d["volume"] else "❌",
+                        "Vol ratio": _d["vol_ratio"],
+                        "PASS": "✅ PASS" if all([_d["trend"], _d["atr"], _d["volume"]]) else "❌ FAIL",
+                    })
+                except Exception as _ex:
+                    filter_rows.append({"Ticker": _t, "PASS": f"error: {_ex}"})
+            if filter_rows:
+                st.dataframe(pd.DataFrame(filter_rows), use_container_width=True, hide_index=True)
+
+            # ── Strategy signal table (first 5 tickers) ───────────────────
+            st.markdown("**Strategy signal breakdown** (first 5 tickers)")
             debug_rows = []
             for ticker_d, df_d in list(hasdata.items())[:5]:
                 diag = _run_strategies_debug(
@@ -443,7 +450,6 @@ def _tab_signals(
                 for r in diag["strategies"]:
                     debug_rows.append({
                         "Ticker": ticker_d,
-                        "Bars": diag["bars"],
                         "Strategy": r["strategy"],
                         "Direction": r["direction"],
                         "Score": r["score"],
@@ -451,7 +457,7 @@ def _tab_signals(
                     })
             if debug_rows:
                 st.dataframe(pd.DataFrame(debug_rows), use_container_width=True, hide_index=True)
-            st.info("💡 Tip: enable **Bypass global filter** in the sidebar to see signals in calm/non-trending markets.")
+            st.info("💡 Enable **Bypass global filter** in the sidebar to explore signals in calm markets.")
 
     if not signals:
         st.info("No signals meeting the score threshold right now. Open the Diagnostics expander above to see raw strategy output.")
@@ -891,8 +897,17 @@ def _build_sidebar() -> Tuple[Region, List[str], List[str], Timeframe]:
         )
         if custom.strip():
             tickers = [t.strip().upper() for t in custom.split(",") if t.strip()]
+            max_t = len(tickers)
         else:
-            tickers = default_tickers
+            max_t = st.slider(
+                "Max tickers to scan",
+                min_value=5, max_value=len(default_tickers),
+                value=min(25, len(default_tickers)),
+                step=5,
+                key="sb_max_tickers",
+                help="Fewer tickers = faster initial load. Increase once the cache is warm.",
+            )
+            tickers = default_tickers[:max_t]
 
         st.caption(f"{len(tickers)} ticker(s) selected")
 
@@ -951,6 +966,12 @@ def _build_sidebar() -> Tuple[Region, List[str], List[str], Timeframe]:
         st.divider()
         if st.button("Refresh Data", use_container_width=True, key="refresh"):
             st.cache_data.clear()
+            # Also clear disk cache so stale yfinance frames are re-downloaded.
+            try:
+                from data.data_fetcher import clear_cache as _clear_disk_cache
+                _clear_disk_cache()
+            except Exception:
+                pass
             st.rerun()
 
     return region, tickers, strategy_names, timeframe

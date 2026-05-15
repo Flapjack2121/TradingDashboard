@@ -46,6 +46,16 @@ logger = get_logger("strategy")
 # Set to True from the UI (app.py) to bypass the global filter for exploration.
 BYPASS_GLOBAL_FILTER: bool = False
 
+# Global filter thresholds.
+# ATR must be >= 90% of its 20-period average (prevents trades in extremely
+# low-vol regimes without blocking near-average conditions).
+ATR_FILTER_THRESHOLD: float = 0.90
+
+# Volume: previous completed bar must be >= 80% of the 20-period average.
+# We use the PREVIOUS bar (iloc[-2]) because today's intraday bar is
+# incomplete until market close and always understates volume.
+VOL_FILTER_THRESHOLD: float = 0.80
+
 
 class Strategy(ABC):
     """
@@ -142,12 +152,15 @@ class Strategy(ABC):
             return False
 
         trend_ok = (fast > slow) if direction == "BUY" else (fast < slow)
-        atr_ok = atr_now > atr_ma
+        # Allow ATR within 10% below its average — prevents blocking
+        # near-average volatility during consolidation phases.
+        atr_ok = atr_now >= atr_ma * ATR_FILTER_THRESHOLD
 
-        # Use the highest volume of the last 2 bars so that an incomplete
-        # intraday bar (today's partial session) doesn't kill every signal.
+        # Use the PREVIOUS completed bar for volume (iloc[-2]) because
+        # today's intraday bar is incomplete and understates participation.
+        # Allow volume down to 80% of average to pass near-average days.
         vol_prev = float(df["Volume"].iloc[-2]) if len(df) >= 2 else vol_now
-        vol_ok = max(vol_now, vol_prev) > vol_ma
+        vol_ok = vol_prev >= vol_ma * VOL_FILTER_THRESHOLD
 
         return bool(trend_ok and atr_ok and vol_ok)
 
@@ -156,8 +169,10 @@ class Strategy(ABC):
         """Return per-condition booleans for diagnostics / the UI."""
         if len(df) < INDICATORS.ema_slow + INDICATORS.atr_avg_period:
             return {"trend": False, "atr": False, "volume": False,
-                    "fast": 0.0, "slow": 0.0, "atr_now": 0.0,
-                    "atr_ma": 0.0, "vol_ratio": 0.0}
+                    "ema_fast": 0.0, "ema_slow": 0.0, "atr_now": 0.0,
+                    "atr_ma": 0.0, "vol_ratio": 0.0,
+                    "atr_threshold": ATR_FILTER_THRESHOLD,
+                    "vol_threshold": VOL_FILTER_THRESHOLD}
         fast = float(ema(df["Close"], INDICATORS.ema_fast).iloc[-1])
         slow = float(ema(df["Close"], INDICATORS.ema_slow).iloc[-1])
         atr_now = float(atr(df).iloc[-1])
@@ -167,13 +182,15 @@ class Strategy(ABC):
         vol_ma = float(volume_average(df["Volume"]).iloc[-1])
         return {
             "trend": bool((fast > slow) if direction == "BUY" else (fast < slow)),
-            "atr": bool(atr_now > atr_ma),
-            "volume": bool(max(vol_now, vol_prev) > vol_ma),
+            "atr": bool(atr_now >= atr_ma * ATR_FILTER_THRESHOLD),
+            "volume": bool(vol_prev >= vol_ma * VOL_FILTER_THRESHOLD),
             "ema_fast": round(fast, 2),
             "ema_slow": round(slow, 2),
             "atr_now": round(atr_now, 4),
             "atr_ma": round(atr_ma, 4),
-            "vol_ratio": round(max(vol_now, vol_prev) / vol_ma, 2) if vol_ma > 0 else 0.0,
+            "vol_ratio": round(vol_prev / vol_ma, 2) if vol_ma > 0 else 0.0,
+            "atr_threshold": ATR_FILTER_THRESHOLD,
+            "vol_threshold": VOL_FILTER_THRESHOLD,
         }
 
     # ------------------------------------------------------------------

@@ -89,7 +89,13 @@ def fetch_history(
     if use_cache and CACHE.enabled:
         cached = _cache.get(key)
         if isinstance(cached, pd.DataFrame) and not cached.empty:
-            return cached.copy()
+            # Normalize columns in case the cached entry pre-dates the
+            # MultiIndex fix (stale disk cache from an older code version).
+            cached = _normalize_ohlcv_columns(cached)
+            keep = [c for c in REQUIRED_OHLCV if c in cached.columns]
+            if keep:
+                return cached[keep].copy()
+            # Columns unrecognisable — fall through to re-download.
 
     raw = _yf_download(ticker, timeframe, period)
     if raw.empty:
@@ -193,6 +199,41 @@ def cache_info() -> Dict[str, object]:
 # Internal: yfinance call & post-processing
 # =============================================================================
 
+def _normalize_ohlcv_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Flatten MultiIndex columns and deduplicate.
+
+    yfinance 0.2.x returns MultiIndex columns even for single-ticker downloads.
+    Two known formats:
+      - Level 0 = field name ("Close"), Level 1 = ticker ("AAPL")  [common]
+      - Level 0 = ticker ("AAPL"),      Level 1 = field name        [rare]
+    We detect which level holds field names and promote that level to a plain
+    Index. Duplicate column names (after flattening) are dropped, keeping the
+    first occurrence. Finally all names are cast to str.
+    """
+    if isinstance(df.columns, pd.MultiIndex):
+        _field_names = {"Open", "High", "Low", "Close", "Volume", "Adj Close"}
+        lvl0 = {str(c) for c in df.columns.get_level_values(0)}
+        lvl1 = {str(c) for c in df.columns.get_level_values(1)}
+        if lvl0 & _field_names:
+            df = df.copy()
+            df.columns = [str(c) for c in df.columns.get_level_values(0)]
+        elif lvl1 & _field_names:
+            df = df.copy()
+            df.columns = [str(c) for c in df.columns.get_level_values(1)]
+        else:
+            df = df.copy()
+            df.columns = [str(c) for c in df.columns.get_level_values(0)]
+    else:
+        df = df.copy()
+        df.columns = [str(c) for c in df.columns]
+
+    # Drop duplicate column names produced by some yfinance multi-field outputs
+    # (e.g. both "Adj Close" and "Close" normalising to "Close").
+    df = df.loc[:, ~df.columns.duplicated(keep="first")]
+    return df
+
+
 def _yf_download(
     ticker: str,
     timeframe: Timeframe,
@@ -225,10 +266,7 @@ def _yf_download(
                     ticker, interval, period)
         return _empty_ohlcv()
 
-    # Recent yfinance versions sometimes return MultiIndex columns even for
-    # a single ticker. Flatten so downstream code sees plain columns.
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
+    df = _normalize_ohlcv_columns(df)
 
     # Keep only the standard OHLCV columns we care about.
     keep = [c for c in REQUIRED_OHLCV if c in df.columns]
