@@ -130,6 +130,40 @@ def _cached_fetch_many(tickers_key: str, timeframe_val: str) -> Dict[str, pd.Dat
 # Signal pipeline
 # =============================================================================
 
+def _run_strategies_debug(
+    df: pd.DataFrame,
+    ticker: str,
+    region: str,
+    strategy_names: List[str],
+    timeframe: Timeframe,
+    ranker: Optional[TradeRanker],
+) -> Dict[str, Any]:
+    """
+    Same as _run_strategies but returns a detailed diagnostics dict.
+    Used by the debug expander in the Signals tab.
+    """
+    strategies = [build_strategy(StrategyName(n)) for n in strategy_names]
+    results = []
+    for strat in strategies:
+        entry: Dict[str, Any] = {"strategy": type(strat).__name__, "direction": "HOLD",
+                                  "score": 0, "error": None}
+        try:
+            sig = strat.generate_signal(df, ticker, region, timeframe)
+            if sig is not None:
+                entry["direction"] = sig.direction
+                entry["score"] = sig.strategy_score
+                entry["breakdown"] = sig.confluence_breakdown
+        except Exception as exc:
+            entry["error"] = str(exc)
+        results.append(entry)
+    return {
+        "ticker": ticker,
+        "bars": len(df),
+        "strategies": results,
+        "best_score": max((r["score"] for r in results), default=0),
+    }
+
+
 def _run_strategies(
     df: pd.DataFrame,
     ticker: str,
@@ -361,8 +395,36 @@ def _tab_signals(
             min_final_score=min_final,
         )
 
+    # ── Debug expander ────────────────────────────────────────────────────────
+    with st.expander("🔍 Diagnostics (open if no signals appear)"):
+        tickers_key = ",".join(sorted(set(tickers)))
+        dfs_debug = _cached_fetch_many(tickers_key, timeframe.value)
+        nodata = [t for t, d in dfs_debug.items() if d is None or d.empty]
+        hasdata = {t: d for t, d in dfs_debug.items() if d is not None and not d.empty}
+        st.write(f"**Tickers with data:** {len(hasdata)} / {len(dfs_debug)}")
+        if nodata:
+            st.warning(f"No data returned for: {nodata}")
+
+        if hasdata:
+            debug_rows = []
+            for ticker_d, df_d in list(hasdata.items())[:5]:   # first 5 tickers
+                diag = _run_strategies_debug(
+                    df_d, ticker_d, region.value, strategy_names, timeframe, ranker
+                )
+                for r in diag["strategies"]:
+                    debug_rows.append({
+                        "Ticker": ticker_d,
+                        "Bars": diag["bars"],
+                        "Strategy": r["strategy"],
+                        "Direction": r["direction"],
+                        "Score": r["score"],
+                        "Error": r.get("error") or "—",
+                    })
+            if debug_rows:
+                st.dataframe(pd.DataFrame(debug_rows), use_container_width=True, hide_index=True)
+
     if not signals:
-        st.info("No signals meeting the score threshold right now.")
+        st.info("No signals meeting the score threshold right now. Open the Diagnostics expander above to see raw strategy output.")
         return
 
     st.success(f"Found **{len(signals)}** actionable signal(s).")
