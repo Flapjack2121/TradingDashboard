@@ -67,24 +67,60 @@ class Region(str, Enum):
 # Users can override via the UI ticker input.
 REGION_TICKERS: Dict[Region, List[str]] = {
     Region.US: [
+        # Mega-cap tech
         "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA",
-        "JPM", "V", "WMT", "XOM", "UNH", "JNJ", "PG", "HD",
+        "AVGO", "ORCL", "CRM", "ADBE", "AMD", "QCOM", "TXN", "INTC",
+        "MU", "AMAT", "LRCX", "KLAC", "MRVL",
+        # Financials
+        "JPM", "V", "MA", "BAC", "GS", "MS", "WFC", "BLK", "AXP", "C",
+        # Healthcare / Pharma
+        "UNH", "JNJ", "LLY", "ABBV", "MRK", "PFE", "BMY", "AMGN", "GILD",
+        # Consumer
+        "WMT", "HD", "PG", "COST", "MCD", "KO", "PEP", "NKE", "SBUX", "TGT",
+        # Energy
+        "XOM", "CVX", "COP", "SLB", "OXY",
+        # Industrials
+        "CAT", "DE", "HON", "BA", "GE", "RTX", "UPS", "FDX",
+        # Communication / Media
+        "NFLX", "DIS", "T", "VZ", "CMCSA",
+        # Materials / Other
+        "LIN", "FCX", "NEM",
     ],
     Region.EUROPE: [
-        # DAX (Germany)
+        # DAX — Germany (XETRA)
         "SAP.DE", "SIE.DE", "ALV.DE", "BAS.DE", "BMW.DE",
-        # FTSE (UK)
+        "VOW3.DE", "DTE.DE", "BAYN.DE", "DBK.DE", "MUV2.DE",
+        "ADS.DE", "RWE.DE", "BEI.DE", "MRK.DE", "HEN3.DE",
+        # FTSE 100 — UK
         "AZN.L", "HSBA.L", "ULVR.L", "BP.L", "SHEL.L",
-        # CAC (France)
-        "MC.PA", "OR.PA", "AIR.PA",
+        "GSK.L", "RIO.L", "DGE.L", "LLOY.L", "BATS.L",
+        "AAL.L", "NG.L", "PRU.L",
+        # CAC 40 — France
+        "MC.PA", "OR.PA", "AIR.PA", "BNP.PA", "SAN.PA",
+        "TTE.PA", "RI.PA", "SU.PA", "EL.PA", "KER.PA",
+        # AEX — Netherlands
+        "ASML.AS", "PHIA.AS", "UNA.AS", "ADYEN.AS", "HEIA.AS",
+        # SMI — Switzerland
+        "NESN.SW", "ROG.SW", "NOVN.SW",
+        # IBEX — Spain
+        "SAN.MC", "IBE.MC", "ITX.MC",
     ],
     Region.ASIA: [
-        # Nikkei (Japan)
+        # Nikkei 225 — Japan
         "7203.T", "6758.T", "9984.T", "8306.T", "6861.T",
-        # Hang Seng (Hong Kong)
+        "6501.T", "9432.T", "7974.T", "4063.T", "6902.T",
+        "7267.T", "8035.T", "6594.T", "2914.T", "9433.T",
+        # Hang Seng — Hong Kong
         "0700.HK", "9988.HK", "0005.HK", "1299.HK",
-        # ADRs
-        "TSM", "BABA",
+        "0941.HK", "2318.HK", "0388.HK", "1113.HK", "1810.HK",
+        # KOSPI — South Korea (yfinance)
+        "005930.KS", "000660.KS", "035420.KS", "005380.KS",
+        # SGX — Singapore
+        "D05.SI", "O39.SI", "U11.SI",
+        # Indian ADRs (NYSE/NASDAQ listed, no suffix)
+        "INFY", "WIT", "HDB", "IBN", "TTM",
+        # Chinese ADRs & Tech
+        "TSM", "BABA", "JD", "BIDU", "PDD", "NIO",
     ],
 }
 
