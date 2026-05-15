@@ -25,7 +25,15 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from dotenv import load_dotenv
+# Optional: python-dotenv is only needed for local .env loading. On
+# managed hosts (Streamlit Cloud, etc.) env vars are injected directly
+# and dotenv may not be installed — degrade to a no-op in that case.
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    def load_dotenv(*_args, **_kwargs) -> bool:
+        return False
+
 
 # =============================================================================
 # Project paths
