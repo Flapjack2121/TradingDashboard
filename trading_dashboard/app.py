@@ -137,6 +137,8 @@ def _run_strategies(
     strategy_names: List[str],
     timeframe: Timeframe,
     ranker: Optional[TradeRanker],
+    min_strategy_score: float = 60.0,
+    min_final_score: float = 0.60,
 ) -> Optional[Signal]:
     """
     Run selected strategies, pick the highest-scoring signal, apply ML scoring,
@@ -175,8 +177,10 @@ def _run_strategies(
     best.confluence_breakdown = confluence.as_dict()
     best.final_score = combine_final_score(best.strategy_score, ml_score)
 
-    # Gate: strategy score
-    if best.strategy_score < SCORING.min_strategy_score:
+    # Gate: use the slider values passed in from the sidebar
+    if best.strategy_score < min_strategy_score:
+        return None
+    if best.final_score < min_final_score:
         return None
 
     return best
@@ -188,6 +192,8 @@ def _scan_universe(
     strategy_names: List[str],
     timeframe: Timeframe,
     ranker: Optional[TradeRanker],
+    min_strategy_score: float = 60.0,
+    min_final_score: float = 0.60,
 ) -> List[Signal]:
     """Fetch all tickers in parallel and generate signals."""
     tickers_key = ",".join(sorted(set(tickers)))
@@ -197,7 +203,11 @@ def _scan_universe(
     for ticker, df in dfs.items():
         if df is None or df.empty:
             continue
-        sig = _run_strategies(df, ticker, region.value, strategy_names, timeframe, ranker)
+        sig = _run_strategies(
+            df, ticker, region.value, strategy_names, timeframe, ranker,
+            min_strategy_score=min_strategy_score,
+            min_final_score=min_final_score,
+        )
         if sig is not None:
             signals.append(sig)
 
@@ -341,9 +351,15 @@ def _tab_signals(
     ranker: Optional[TradeRanker],
 ) -> None:
     """Signals tab: scan → table → cards → price chart."""
+    min_strat = float(st.session_state.get("sb_min_score", 60))
+    min_final = float(st.session_state.get("sb_min_final", 0.60))
 
     with st.spinner("Scanning universe…"):
-        signals = _scan_universe(tickers, region, strategy_names, timeframe, ranker)
+        signals = _scan_universe(
+            tickers, region, strategy_names, timeframe, ranker,
+            min_strategy_score=min_strat,
+            min_final_score=min_final,
+        )
 
     if not signals:
         st.info("No signals meeting the score threshold right now.")
@@ -730,14 +746,18 @@ def _build_sidebar() -> Tuple[Region, List[str], List[str], Timeframe]:
 
         # Score overrides
         st.divider()
-        st.caption("Score Gates")
+        st.caption("Score Gates  (lower = more signals)")
         st.slider(
             "Min Strategy Score", 0, 100,
-            int(SCORING.min_strategy_score), key="sb_min_score"
+            40, key="sb_min_score",
+            help="Without a trained ML model, max achievable score is 80. "
+                 "Raise to 75 for strict filtering, lower to see more signals."
         )
         st.slider(
             "Min Final Score", 0.0, 1.0,
-            SCORING.min_final_score, step=0.01, key="sb_min_final"
+            0.40, step=0.05, key="sb_min_final",
+            help="Final score = 50% strategy score + 50% ML score. "
+                 "With no ML model, max is ~0.40. Raise once ML is trained."
         )
 
         # Alerts toggle
