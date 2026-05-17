@@ -849,45 +849,124 @@ def _tab_ml(ranker: Optional[TradeRanker]) -> None:
         )
 
     if st.button("🚀 Train Model Now", type="primary", key="train_btn"):
-        from ml.train import _parse_regions, train_pipeline
+        from ml.train import _parse_regions, build_training_set
+        from ml.model import TradeRanker as _TradeRanker
+        from ml.train import evaluate as _ml_evaluate
+        from backtesting.backtester import run_backtest as _run_bt
+        from data.data_fetcher import fetch_history as _fetch_hist
+        from strategies import REGISTRY, build_strategy as _bs
+        import numpy as np
         import json as _json
 
-        prog = st.progress(0, text="Starting training…")
-        status = st.empty()
+        regions = _parse_regions(train_regions or ["us"])
 
-        try:
-            status.info("Fetching historical data and running backtests…")
-            prog.progress(20, text="Fetching data & running backtests…")
+        # Build full ticker list across all selected regions
+        all_ticker_region: List[Tuple[str, Any]] = []
+        for _r in regions:
+            _ts = get_tickers_for_region(_r)[:max_tickers]
+            for _t in _ts:
+                all_ticker_region.append((_t, _r))
 
-            regions = _parse_regions(train_regions or ["us"])
-            result = train_pipeline(
-                regions=regions,
-                timeframe=_TF(train_tf),
-                max_tickers_per_region=max_tickers,
-                save_artifacts=True,
+        total_tickers = len(all_ticker_region)
+        prog = st.progress(0, text="Starting…")
+        status_box = st.empty()
+        counter_box = st.empty()
+
+        strategies = [_bs(name) for name in REGISTRY.keys()]
+        all_trades_with_region: List[Tuple] = []
+        dfs_for_features: Dict[str, pd.DataFrame] = {}
+        errors: List[str] = []
+
+        for idx, (ticker, region_obj) in enumerate(all_ticker_region):
+            pct = int(idx / total_tickers * 75)
+            prog.progress(pct, text=f"Backtesting {ticker} ({idx + 1}/{total_tickers})…")
+            status_box.info(
+                f"**{ticker}** — fetching & running {len(strategies)} strategies…"
             )
-            prog.progress(100, text="Done!")
+            counter_box.caption(
+                f"Trades collected so far: **{len(all_trades_with_region)}** "
+                f"from **{len(dfs_for_features)}** tickers"
+            )
+            try:
+                df_t = _fetch_hist(ticker, timeframe=_TF(train_tf))
+                if df_t is None or df_t.empty:
+                    errors.append(f"{ticker}: no data")
+                    continue
+                result_bt = _run_bt(
+                    df=df_t, ticker=ticker, region=region_obj.value,
+                    strategies=strategies, timeframe=_TF(train_tf),
+                    apply_score_filter=False,
+                )
+                if result_bt.trades:
+                    dfs_for_features[ticker] = df_t
+                    for trade in result_bt.trades:
+                        all_trades_with_region.append((trade, region_obj.value))
+            except Exception as _exc:
+                errors.append(f"{ticker}: {_exc}")
 
-            if result.model is None:
-                status.error(
-                    "Training failed — not enough trades were collected. "
-                    "Try adding more tickers or a longer timeframe."
+        prog.progress(78, text="Building feature matrix…")
+        status_box.info("Building features from collected trades…")
+
+        if not all_trades_with_region:
+            prog.progress(100, text="Failed")
+            status_box.error(
+                f"No trades collected across {total_tickers} tickers. "
+                "Try more tickers or bypass the global filter during training."
+            )
+        else:
+            X, y = build_training_set(all_trades_with_region, dfs_for_features)
+
+            if len(X) < 20 or len(np.unique(y)) < 2:
+                prog.progress(100, text="Failed")
+                status_box.error(
+                    f"Only {len(X)} training samples with {len(np.unique(y))} "
+                    "class(es). Need at least 20 samples and both wins + losses. "
+                    "Increase tickers per region."
                 )
             else:
-                m = result.metrics
-                status.success(
-                    f"Model trained on **{result.n_trades}** trades.  "
+                prog.progress(85, text="Training RandomForest…")
+                status_box.info(
+                    f"Fitting RandomForest on **{len(X)}** samples "
+                    f"({int(y.sum())} wins / {int((1-y).sum())} losses)…"
+                )
+
+                from sklearn.model_selection import train_test_split
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X, y, test_size=0.2, random_state=42,
+                    stratify=y if len(np.unique(y)) > 1 else None,
+                )
+                model = _TradeRanker()
+                model.fit(X_train, y_train)
+
+                prog.progress(93, text="Evaluating…")
+                m = _ml_evaluate(model, X_test, y_test)
+                m["n_train"] = int(len(X_train))
+                m["regions"] = [r.value for r in regions]
+                m["timeframe"] = train_tf
+
+                prog.progress(97, text="Saving artifacts…")
+                try:
+                    model.save(MODEL_PATH, FEATURE_PATH)
+                    METRICS_PATH.write_text(_json.dumps(m, indent=2, default=str))
+                    saved = True
+                except Exception as _se:
+                    saved = False
+                    errors.append(f"Save failed: {_se}")
+
+                prog.progress(100, text="Done!")
+                status_box.success(
+                    f"Model trained on **{len(X)}** trades from **{len(dfs_for_features)}** tickers.  "
                     f"Accuracy: **{m.get('accuracy', 0):.1%}**  |  "
                     f"F1: **{m.get('f1', 0):.3f}**  |  "
                     f"ROC-AUC: **{m.get('roc_auc', 0):.3f}**"
+                    + (f"  ✅ Saved to disk." if saved else "  ⚠️ Could not save artifact.")
                 )
+                counter_box.empty()
+                if errors:
+                    st.warning(f"Skipped {len(errors)} tickers: " + ", ".join(errors[:5]))
                 st.balloons()
-                # Force reload of the cached ranker on next run
                 _get_ranker.clear()
-                st.info("Model saved. Click **Refresh Data** in the sidebar to activate it.")
-        except Exception as _exc:
-            prog.progress(100, text="Error")
-            status.error(f"Training error: {_exc}")
+                st.info("Model ready. Click **Refresh Data** in the sidebar to activate it.")
 
     st.divider()
 

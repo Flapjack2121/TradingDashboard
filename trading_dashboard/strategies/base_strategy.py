@@ -108,12 +108,19 @@ class Strategy(ABC):
         Returns:
             A copy of `df` with indicator columns appended, OR None if the
             frame is empty / too short for the EMA_slow warm-up.
+
+        Idempotent: if `df` already contains the indicator columns (e.g. it
+        was pre-computed by the backtester before the bar loop), the function
+        returns `df` unchanged — no redundant recomputation.
         """
         if df is None or df.empty:
             return None
         if len(df) < cls.min_bars_required:
             return None
         ensure_ohlcv_columns(df)
+        # Already prepared — skip the expensive with_indicators() call.
+        if "ema_fast" in df.columns:
+            return df
         return with_indicators(df)
 
     # ------------------------------------------------------------------

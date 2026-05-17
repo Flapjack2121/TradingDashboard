@@ -202,6 +202,18 @@ class Backtester:
             logger.warning("Not enough bars for %s — skipping", ticker)
             return result
 
+        # Pre-compute ALL indicators once on the full frame so that each
+        # strategy's prepare() call (which checks for "ema_fast" and skips
+        # with_indicators() when already present) costs O(1) slice instead
+        # of recomputing EMA/RSI/ATR/MACD for every bar window.
+        from utils.indicators import with_indicators as _with_indicators
+        if "ema_fast" not in df.columns:
+            try:
+                df = _with_indicators(df)
+            except Exception:
+                logger.exception("Indicator pre-computation failed for %s", ticker)
+                return result
+
         risk_mgr = RiskManager(starting_equity=self.initial_capital)
         open_positions: Dict[str, _OpenPosition] = {}   # ticker -> position
         trades: List[Trade] = []
@@ -238,6 +250,7 @@ class Backtester:
                 continue   # no entries on the last bar (no future bar to fill)
 
             # Pass a trailing window (bars 0..i inclusive) to strategies.
+            # Indicators are already attached — prepare() will skip recomputing.
             window = df.iloc[: i + 1]
 
             signal = self._best_signal(
