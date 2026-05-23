@@ -469,8 +469,9 @@
 
   <!-- Error state -->
   <div id="error-state" class="data-error" style="display:none;">
-    <h2>No market data found</h2>
-    <p>The dashboard couldn't load <code>data.json</code>. To populate it, run the data engine on your machine:</p>
+    <h2>Dashboard failed to initialize</h2>
+    <p id="error-detail" style="color: var(--warn); font-family: 'JetBrains Mono', monospace; font-size: 13px; margin: 12px 0; padding: 12px; background: rgba(251,191,36,0.08); border-left: 3px solid var(--warn); white-space: pre-wrap; word-break: break-word; text-align: left;"></p>
+    <p>If the message above mentions <code>fetch</code> or <code>data.json</code>, the data file is missing. Run the data engine on your machine:</p>
     <span class="cmd">$ pip install yfinance pandas numpy<br>$ python3 fetch_signals.py</span>
     <p style="margin-top: 14px;">This pulls real OHLCV data from Yahoo Finance, computes technical indicators, scores every setup, and writes <code>data.json</code>. Then refresh this page.</p>
   </div>
@@ -775,8 +776,11 @@ async function loadData() {
 
     initDashboard();
   } catch (e) {
+    console.error('Dashboard init error:', e);
     document.getElementById('loading-state').style.display = 'none';
     document.getElementById('error-state').style.display = 'block';
+    const detail = document.getElementById('error-detail');
+    if (detail) detail.textContent = (e && e.stack) ? e.stack : String(e);
   }
 }
 
