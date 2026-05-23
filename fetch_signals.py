@@ -643,8 +643,19 @@ def main():
         }
     }
 
+    def clean_for_json(obj):
+        if isinstance(obj, float):
+            if np.isnan(obj) or np.isinf(obj):
+                return None
+            return obj
+        if isinstance(obj, dict):
+            return {k: clean_for_json(v) for k, v in obj.items()}
+        if isinstance(obj, (list, tuple)):
+            return [clean_for_json(x) for x in obj]
+        return obj
+
     with open('data.json', 'w') as f:
-        json.dump(output, f, indent=2, default=str)
+        json.dump(clean_for_json(output), f, indent=2, default=str)
     print(f"\nOK data.json written ({len(signals)} signals)")
     print("  Now open dashboard.html in your browser.\n")
 
