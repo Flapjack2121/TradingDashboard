@@ -461,7 +461,7 @@ def compute_signal(symbol_info, df, bench_df, asset_class):
 
     timing_score = 5
     earnings_days = None
-    if asset_class != 'fx' and 'earnings_days' in symbol_info:
+    if asset_class != 'fx' and symbol_info.get('earnings_days') is not None:
         earnings_days = symbol_info['earnings_days']
         if 0 <= earnings_days <= 5:
             timing_score = 0
