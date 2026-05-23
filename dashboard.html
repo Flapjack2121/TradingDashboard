@@ -744,6 +744,7 @@ let candleSeries = null;
 let ema21Series = null;
 let sma50Series = null;
 let sma200Series = null;
+let priceLines = [];
 
 const STRATEGIES = {
   'sepa': { name: 'SEPA / VCP (Minervini)', desc: 'Stage 2 uptrend, RS≥80, consolidating in a Volatility Contraction Pattern (3-4 tighter price contractions on declining volume), ready to break out on volume.' },
@@ -967,24 +968,25 @@ function updateChart(sig) {
   if (sig.sma200_series && sig.sma200_series.length > 0) sma200Series.setData(sig.sma200_series);
   else sma200Series.setData([]);
 
-  candleSeries.priceLines().forEach(line => candleSeries.removePriceLine(line));
+  priceLines.forEach(line => candleSeries.removePriceLine(line));
+  priceLines = [];
 
   if (sig.bias !== 'flat') {
-    candleSeries.createPriceLine({
+    priceLines.push(candleSeries.createPriceLine({
       price: sig.entry,
       color: '#d4a373', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed,
       axisLabelVisible: true, title: 'ENTRY'
-    });
-    candleSeries.createPriceLine({
+    }));
+    priceLines.push(candleSeries.createPriceLine({
       price: sig.stop,
       color: '#f87171', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed,
       axisLabelVisible: true, title: 'STOP'
-    });
-    candleSeries.createPriceLine({
+    }));
+    priceLines.push(candleSeries.createPriceLine({
       price: sig.target,
       color: '#4ade80', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed,
       axisLabelVisible: true, title: 'TARGET'
-    });
+    }));
   }
 
   chart.timeScale().fitContent();
