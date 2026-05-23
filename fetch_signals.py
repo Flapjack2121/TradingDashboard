@@ -78,11 +78,37 @@ UNIVERSE = {
         {'symbol': 'JD', 'display': 'JD', 'name': 'JD.com (ADR)', 'sector': 'Consumer Disc.', 'region': 'China'},
         {'symbol': 'INFY', 'display': 'INFY', 'name': 'Infosys (ADR)', 'sector': 'Technology', 'region': 'India'},
     ],
+    'smallcap': [
+        {'symbol': 'CELH', 'display': 'CELH', 'name': 'Celsius Holdings', 'sector': 'Consumer Stap.', 'region': 'US Small'},
+        {'symbol': 'ELF',  'display': 'ELF',  'name': 'e.l.f. Beauty', 'sector': 'Consumer Disc.', 'region': 'US Small'},
+        {'symbol': 'IBP',  'display': 'IBP',  'name': 'Installed Building Products', 'sector': 'Industrials', 'region': 'US Small'},
+        {'symbol': 'LNTH', 'display': 'LNTH', 'name': 'Lantheus Holdings', 'sector': 'Healthcare', 'region': 'US Small'},
+        {'symbol': 'ATKR', 'display': 'ATKR', 'name': 'Atkore', 'sector': 'Industrials', 'region': 'US Small'},
+        {'symbol': 'CRS',  'display': 'CRS',  'name': 'Carpenter Technology', 'sector': 'Materials', 'region': 'US Small'},
+        {'symbol': 'PI',   'display': 'PI',   'name': 'Impinj', 'sector': 'Technology', 'region': 'US Small'},
+        {'symbol': 'BMI',  'display': 'BMI',  'name': 'Badger Meter', 'sector': 'Industrials', 'region': 'US Small'},
+        {'symbol': 'RMBS', 'display': 'RMBS', 'name': 'Rambus', 'sector': 'Technology', 'region': 'US Small'},
+        {'symbol': 'SPSC', 'display': 'SPSC', 'name': 'SPS Commerce', 'sector': 'Technology', 'region': 'US Small'},
+    ],
+    'em': [
+        {'symbol': 'VALE', 'display': 'VALE', 'name': 'Vale', 'sector': 'Materials', 'region': 'Brazil'},
+        {'symbol': 'ITUB', 'display': 'ITUB', 'name': 'Itau Unibanco', 'sector': 'Financials', 'region': 'Brazil'},
+        {'symbol': 'PBR',  'display': 'PBR',  'name': 'Petrobras', 'sector': 'Energy', 'region': 'Brazil'},
+        {'symbol': 'MELI', 'display': 'MELI', 'name': 'MercadoLibre', 'sector': 'Consumer Disc.', 'region': 'LatAm'},
+        {'symbol': 'HDB',  'display': 'HDB',  'name': 'HDFC Bank (ADR)', 'sector': 'Financials', 'region': 'India'},
+        {'symbol': 'IBN',  'display': 'IBN',  'name': 'ICICI Bank (ADR)', 'sector': 'Financials', 'region': 'India'},
+        {'symbol': 'PDD',  'display': 'PDD',  'name': 'PDD Holdings', 'sector': 'Consumer Disc.', 'region': 'China'},
+        {'symbol': 'NTES', 'display': 'NTES', 'name': 'NetEase', 'sector': 'Communication', 'region': 'China'},
+        {'symbol': 'SE',   'display': 'SE',   'name': 'Sea Limited', 'sector': 'Technology', 'region': 'Singapore'},
+        {'symbol': 'AMX',  'display': 'AMX',  'name': 'America Movil', 'sector': 'Communication', 'region': 'Mexico'},
+    ],
 }
 
 BENCHMARK = 'SPY'   # for US RS computation
 BENCH_EU  = '^STOXX50E'
 BENCH_ASIA = '^N225'
+BENCH_SMALL = 'IWM'   # Russell 2000 ETF
+BENCH_EM    = 'EEM'   # iShares MSCI Emerging Markets
 
 # =============================================================================
 # TECHNICAL INDICATORS
@@ -577,19 +603,23 @@ def main():
     print("GLOBAL SWING DESK - Data Engine")
     print("=" * 70)
 
-    print(f"\n[1/4] Fetching benchmarks...")
-    bench_us   = fetch_one(BENCHMARK)
-    bench_eu   = fetch_one(BENCH_EU)
-    bench_asia = fetch_one(BENCH_ASIA)
+    print(f"\n[1/7] Fetching benchmarks...")
+    bench_us    = fetch_one(BENCHMARK)
+    bench_eu    = fetch_one(BENCH_EU)
+    bench_asia  = fetch_one(BENCH_ASIA)
+    bench_small = fetch_one(BENCH_SMALL)
+    bench_em    = fetch_one(BENCH_EM)
 
     signals = []
     universes = [('fx', UNIVERSE['fx'], None),
                  ('us', UNIVERSE['us'], bench_us),
                  ('eu', UNIVERSE['eu'], bench_eu),
-                 ('asia', UNIVERSE['asia'], bench_asia)]
+                 ('asia', UNIVERSE['asia'], bench_asia),
+                 ('smallcap', UNIVERSE['smallcap'], bench_small),
+                 ('em', UNIVERSE['em'], bench_em)]
 
     for i, (asset_class, items, bench) in enumerate(universes, start=2):
-        print(f"\n[{i}/4] Processing {asset_class.upper()} ({len(items)} instruments)...")
+        print(f"\n[{i}/7] Processing {asset_class.upper()} ({len(items)} instruments)...")
         for item in items:
             sym = item['symbol']
             print(f"  -> {sym:12s}", end=' ')
@@ -615,14 +645,18 @@ def main():
     us_signals = [s for s in signals if s['asset_class'] == 'us']
     eu_signals = [s for s in signals if s['asset_class'] == 'eu']
     asia_signals = [s for s in signals if s['asset_class'] == 'asia']
+    smallcap_signals = [s for s in signals if s['asset_class'] == 'smallcap']
+    em_signals = [s for s in signals if s['asset_class'] == 'em']
     high_conv = [s for s in signals if s['priority_score'] >= 70]
 
     print("\n" + "=" * 70)
     print(f"COMPLETE: {len(signals)} instruments analyzed")
-    print(f"  FX:   {len(fx_signals):3d}")
-    print(f"  US:   {len(us_signals):3d}")
-    print(f"  EU:   {len(eu_signals):3d}")
-    print(f"  Asia: {len(asia_signals):3d}")
+    print(f"  FX:        {len(fx_signals):3d}")
+    print(f"  US:        {len(us_signals):3d}")
+    print(f"  EU:        {len(eu_signals):3d}")
+    print(f"  Asia:      {len(asia_signals):3d}")
+    print(f"  Small Cap: {len(smallcap_signals):3d}")
+    print(f"  EM:        {len(em_signals):3d}")
     print(f"\n  HIGH-CONVICTION SETUPS (score >= 70): {len(high_conv)}")
     for s in high_conv[:10]:
         print(f"    {s['priority_score']:>3}/100  {s['symbol']:12s}  {s['bias']:5s}  {s['strategy']:20s}  R:R 1:{s['rr']}")
@@ -638,6 +672,8 @@ def main():
                 'us': len(us_signals),
                 'eu': len(eu_signals),
                 'asia': len(asia_signals),
+                'smallcap': len(smallcap_signals),
+                'em': len(em_signals),
             },
             'high_conviction': len(high_conv),
         }

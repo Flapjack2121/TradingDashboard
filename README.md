@@ -55,7 +55,7 @@ python3 fetch_signals.py
 ```
 
 This will:
-- Fetch 1 year of daily OHLCV for ~46 instruments (FX, US, EU, Asia equities)
+- Fetch 1 year of daily OHLCV for ~66 instruments (FX, US large/small cap, EU, Asia, EM)
 - Compute EMA(8, 21, 50), SMA(50, 150, 200), ATR(14), RSI(14), RSI(2), ADX(14)
 - Run Stage Analysis (Weinstein), compute RS Rating (O'Neil)
 - Detect setups: VCP, CANSLIM breakouts, pullbacks, Connors mean reversion
@@ -130,6 +130,8 @@ Every stock is classified into a stage. **Trade Stage 2 longs and Stage 4 shorts
 - **US**: 16 large caps
 - **Europe**: 12 leaders
 - **Asia**: 9 leaders
+- **US Small Cap**: 10 Russell 2000 leaders (RS-ranked vs IWM)
+- **Emerging Markets**: 10 leaders across Brazil, India, China, LatAm, SEA (RS-ranked vs EEM)
 
 Edit `UNIVERSE` at the top of `fetch_signals.py` to add or remove instruments.
 

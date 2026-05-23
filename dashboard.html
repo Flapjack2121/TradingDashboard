@@ -207,6 +207,8 @@
   .asset-tag.us { color: var(--accent); border-color: var(--accent); }
   .asset-tag.eu { color: var(--accent-2); border-color: var(--accent-2); }
   .asset-tag.asia { color: var(--warn); border-color: var(--warn); }
+  .asset-tag.smallcap { color: #f472b6; border-color: #f472b6; }
+  .asset-tag.em { color: #2dd4bf; border-color: #2dd4bf; }
 
   .signal-badge {
     display: inline-block; padding: 2px 7px; font-family: var(--mono); font-size: 9px;
@@ -485,6 +487,8 @@
       <button class="asset-tab" data-asset="us">US <span class="count" id="count-us"></span></button>
       <button class="asset-tab" data-asset="eu">Europe <span class="count" id="count-eu"></span></button>
       <button class="asset-tab" data-asset="asia">Asia <span class="count" id="count-asia"></span></button>
+      <button class="asset-tab" data-asset="smallcap">Small Cap <span class="count" id="count-smallcap"></span></button>
+      <button class="asset-tab" data-asset="em">EM <span class="count" id="count-em"></span></button>
     </div>
 
     <!-- 3-COLUMN WORKSPACE -->
@@ -1016,6 +1020,8 @@ function renderSignals() {
   document.getElementById('count-us').textContent = `(${signals.filter(s => s.asset_class === 'us').length})`;
   document.getElementById('count-eu').textContent = `(${signals.filter(s => s.asset_class === 'eu').length})`;
   document.getElementById('count-asia').textContent = `(${signals.filter(s => s.asset_class === 'asia').length})`;
+  document.getElementById('count-smallcap').textContent = `(${signals.filter(s => s.asset_class === 'smallcap').length})`;
+  document.getElementById('count-em').textContent = `(${signals.filter(s => s.asset_class === 'em').length})`;
 
   const tbody = document.getElementById('signals-tbody');
   tbody.innerHTML = filtered.map(s => {
