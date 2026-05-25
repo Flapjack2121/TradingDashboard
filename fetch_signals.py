@@ -237,22 +237,24 @@ def detect_vcp(df, lookback=60):
     vol_late  = recent['Volume'].iloc[-lookback//3:].mean()
     vol_declining = vol_late < vol_early * 0.85 if vol_early > 0 else False
 
-    near_high = recent['Close'].iloc[-1] >= recent['High'].max() * 0.95
+    near_high = recent['Close'].iloc[-1] >= recent['High'].max() * 0.97
 
-    is_vcp = contraction_ratio < 0.6 and near_high
+    # Stricter: require deeper contraction AND declining volume AND proximity to high
+    is_vcp = contraction_ratio < 0.5 and near_high and vol_declining
     quality = 0.0
     if is_vcp:
-        quality = 0.5
-        if vol_declining: quality += 0.3
-        if contraction_ratio < 0.4: quality += 0.2
+        quality = 0.6
+        if contraction_ratio < 0.35: quality += 0.25
+        if recent['Close'].iloc[-1] >= recent['High'].max() * 0.99: quality += 0.15
 
     return is_vcp, min(quality, 1.0)
 
-def detect_pullback_to_ema(df, ema_period=21, tolerance=0.02):
-    """Detects pullback to 21 EMA in an uptrend (or short equivalent)."""
-    if len(df) < ema_period + 5:
+def detect_pullback_to_ema(df, ema_period=21, tolerance=0.015):
+    """Detects pullback to 21 EMA in an established trend (50 SMA rising/falling)."""
+    if len(df) < 60:
         return False, None, 0.0
     ema_v = ema(df['Close'], ema_period)
+    sma50 = sma(df['Close'], 50)
     last_close = df['Close'].iloc[-1]
     last_ema = ema_v.iloc[-1]
     ma200 = sma(df['Close'], 200).iloc[-1] if len(df) >= 200 else None
@@ -261,20 +263,29 @@ def detect_pullback_to_ema(df, ema_period=21, tolerance=0.02):
     if not near_ema:
         return False, None, 0.0
 
-    if ma200 and last_close > ma200:
-        direction = 'long'
-        quality = 0.7
-        for i in range(1, 4):
-            if df['Low'].iloc[-i] <= ema_v.iloc[-i] * 1.005 and df['Close'].iloc[-i] > ema_v.iloc[-i]:
-                quality += 0.1
-                break
-        return True, direction, min(quality, 1.0)
-    elif ma200 and last_close < ma200:
-        return True, 'short', 0.6
+    # Require an actual touch in the last 3 bars — not just hovering near the EMA
+    touched = False
+    for i in range(1, 4):
+        if df['Low'].iloc[-i] <= ema_v.iloc[-i] * 1.005 and df['Close'].iloc[-i] > ema_v.iloc[-i]:
+            touched = True
+            break
+    if not touched:
+        return False, None, 0.0
+
+    # Require trend strength: 50 SMA must be sloping in the direction of the trade
+    sma50_now = sma50.iloc[-1]
+    sma50_prev = sma50.iloc[-10] if len(sma50) >= 10 else sma50_now
+    rising = sma50_now > sma50_prev * 1.005
+    falling = sma50_now < sma50_prev * 0.995
+
+    if ma200 and last_close > ma200 and rising:
+        return True, 'long', 0.8
+    elif ma200 and last_close < ma200 and falling:
+        return True, 'short', 0.7
     return False, None, 0.0
 
-def detect_breakout(df, lookback=20):
-    """Detects breakout above 20-day high (or below 20-day low) on volume."""
+def detect_breakout(df, lookback=30):
+    """Detects breakout above 30-day high (or below 30-day low) with volume."""
     if len(df) < lookback + 5:
         return False, None, 0.0
     recent = df.tail(lookback + 1)
@@ -283,25 +294,29 @@ def detect_breakout(df, lookback=20):
     last_close = df['Close'].iloc[-1]
     last_vol = df['Volume'].iloc[-1]
     avg_vol = df['Volume'].tail(50).mean()
-    vol_confirmed = last_vol > avg_vol * 1.3 if avg_vol > 0 else False
+    vol_confirmed = last_vol > avg_vol * 1.5 if avg_vol > 0 else False
 
-    if last_close > prior_high:
-        quality = 0.7 + (0.2 if vol_confirmed else 0)
+    # Require a meaningful break (>0.5% past the level) AND volume confirmation
+    if last_close > prior_high * 1.005 and vol_confirmed:
+        magnitude = (last_close / prior_high - 1)
+        quality = 0.75 + min(0.2, magnitude * 10)
         return True, 'long', quality
-    elif last_close < prior_low:
-        quality = 0.6 + (0.2 if vol_confirmed else 0)
+    elif last_close < prior_low * 0.995 and vol_confirmed:
+        magnitude = (1 - last_close / prior_low)
+        quality = 0.65 + min(0.2, magnitude * 10)
         return True, 'short', quality
     return False, None, 0.0
 
 def detect_connors(df):
-    """Connors RSI(2) pullback in quality."""
+    """Connors RSI(2) pullback in quality — strict version."""
     if len(df) < 200:
         return False, 0.0
     rsi2 = rsi(df['Close'], 2).iloc[-1]
     ma200 = sma(df['Close'], 200).iloc[-1]
     last = df['Close'].iloc[-1]
-    if last > ma200 and rsi2 < 10:
-        return True, 0.7
+    # Require clearly above 200 SMA (>5%) AND deeply oversold short-term
+    if last > ma200 * 1.05 and rsi2 < 5:
+        return True, 0.8
     return False, 0.0
 
 # =============================================================================
@@ -384,7 +399,7 @@ def compute_signal(symbol_info, df, bench_df, asset_class):
 
     if asset_class == 'fx':
         pip = 0.01 if 'JPY' in symbol_info.get('display', '') else 0.0001
-        stop_distance = atr_v * 2.0
+        stop_distance = atr_v * 3.0
         entry = last_close
         if bias == 'long':
             stop = entry - stop_distance
@@ -396,8 +411,8 @@ def compute_signal(symbol_info, df, bench_df, asset_class):
         target_pips = round(stop_distance * 2.0 / pip)
         stop_pct = None
     else:
-        atr_stop = atr_v * 2.5
-        pct_stop = last_close * 0.10
+        atr_stop = atr_v * 3.0
+        pct_stop = last_close * 0.12
         stop_distance = min(atr_stop, pct_stop)
         entry = last_close
         if bias == 'long':
