@@ -384,28 +384,28 @@ def compute_signal(symbol_info, df, bench_df, asset_class):
 
     if asset_class == 'fx':
         pip = 0.01 if 'JPY' in symbol_info.get('display', '') else 0.0001
-        stop_distance = atr_v * 1.5
+        stop_distance = atr_v * 2.0
         entry = last_close
         if bias == 'long':
             stop = entry - stop_distance
-            target = entry + stop_distance * 2.5
+            target = entry + stop_distance * 2.0
         else:
             stop = entry + stop_distance
-            target = entry - stop_distance * 2.5
+            target = entry - stop_distance * 2.0
         stop_pips = round(stop_distance / pip)
-        target_pips = round(stop_distance * 2.5 / pip)
+        target_pips = round(stop_distance * 2.0 / pip)
         stop_pct = None
     else:
-        atr_stop = atr_v * 2
-        pct_stop = last_close * 0.08
+        atr_stop = atr_v * 2.5
+        pct_stop = last_close * 0.10
         stop_distance = min(atr_stop, pct_stop)
         entry = last_close
         if bias == 'long':
             stop = entry - stop_distance
-            target = entry + stop_distance * 2.5
+            target = entry + stop_distance * 2.0
         else:
             stop = entry + stop_distance
-            target = entry - stop_distance * 2.5
+            target = entry - stop_distance * 2.0
         stop_pips = None
         stop_pct = round(stop_distance / entry * 100, 2)
 
@@ -417,53 +417,53 @@ def compute_signal(symbol_info, df, bench_df, asset_class):
     if asset_class == 'fx':
         if sma200 and ema50:
             if bias == 'long' and last_close > sma200 and last_close > ema50 and ema50 > sma200:
-                trend_score = 22
+                trend_score = 25
             elif bias == 'short' and last_close < sma200 and last_close < ema50 and ema50 < sma200:
-                trend_score = 22
+                trend_score = 25
             elif bias == 'long' and last_close > sma200:
-                trend_score = 14
+                trend_score = 16
             elif bias == 'short' and last_close < sma200:
-                trend_score = 14
-        if adx_v > 25: trend_score = min(25, trend_score + 3)
+                trend_score = 16
+        if adx_v > 25: trend_score = min(28, trend_score + 3)
     else:
         if stage == 2 and bias == 'long':
-            trend_score = 18
+            trend_score = 20
             if sma50 and sma150 and sma200 and sma50 > sma150 > sma200:
-                trend_score = 23
-            if adx_v > 25: trend_score = min(25, trend_score + 2)
+                trend_score = 26
+            if adx_v > 25: trend_score = min(28, trend_score + 2)
         elif stage == 4 and bias == 'short':
-            trend_score = 18
+            trend_score = 20
             if sma50 and sma150 and sma200 and sma50 < sma150 < sma200:
-                trend_score = 23
-            if adx_v > 25: trend_score = min(25, trend_score + 2)
+                trend_score = 26
+            if adx_v > 25: trend_score = min(28, trend_score + 2)
         elif stage == 1 or stage == 3:
             trend_score = 4
-    score_breakdown['Trend Quality'] = (round(trend_score), 25)
+    score_breakdown['Trend Quality'] = (round(trend_score), 28)
 
     rs_score = 0
     if asset_class == 'fx':
         roc_60 = ((last_close / close.iloc[-min(60, len(close)-1)]) - 1) * 100
         if (bias == 'long' and roc_60 > 5) or (bias == 'short' and roc_60 < -5):
-            rs_score = 18
+            rs_score = 20
         elif (bias == 'long' and roc_60 > 2) or (bias == 'short' and roc_60 < -2):
-            rs_score = 12
+            rs_score = 13
         else:
             rs_score = 6
     else:
-        if rs_rating >= 85: rs_score = 20
-        elif rs_rating >= 75: rs_score = 16
-        elif rs_rating >= 65: rs_score = 12
+        if rs_rating >= 85: rs_score = 22
+        elif rs_rating >= 75: rs_score = 18
+        elif rs_rating >= 65: rs_score = 13
         elif rs_rating >= 50: rs_score = 7
         else: rs_score = 2
-    score_breakdown['Relative Strength'] = (round(rs_score), 20)
+    score_breakdown['Relative Strength'] = (round(rs_score), 22)
 
-    setup_score = round(setup_quality * 16)
-    if vol_ratio > 1.5:
-        setup_score += 4
-    elif vol_ratio > 1.2:
-        setup_score += 2
-    setup_score = min(20, setup_score)
-    score_breakdown['Setup Quality'] = (round(setup_score), 20)
+    setup_score = round(setup_quality * 12)
+    if vol_ratio > 1.8:
+        setup_score += 3
+    elif vol_ratio > 1.4:
+        setup_score += 1
+    setup_score = min(15, setup_score)
+    score_breakdown['Setup Quality'] = (round(setup_score), 15)
 
     if rr >= 3.0: rr_score = 15
     elif rr >= 2.5: rr_score = 13

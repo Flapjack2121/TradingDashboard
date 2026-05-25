@@ -29,7 +29,7 @@ from fetch_signals import (
 HOLD_BARS   = 40     # max trading days to hold before timeout exit
 WARMUP_BARS = 250    # need a year of history before we issue signals
 MIN_SCORE   = 50     # ignore any signal under this — matches the README's "skip" floor
-HISTORY     = '3y'   # pulled from Yahoo; gives ~2y of usable backtest after warmup
+HISTORY     = '5y'   # pulled from Yahoo; gives ~4y of usable backtest after warmup
 STEP        = 1      # evaluate every Nth bar (1 = every day; 5 = weekly)
 
 # Bucket boundaries (inclusive on both sides)

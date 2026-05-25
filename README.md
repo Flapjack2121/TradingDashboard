@@ -88,9 +88,9 @@ Every setup gets scored on six factors, totaling 0-100:
 
 | Component         | Max | What it measures                                           |
 |-------------------|-----|------------------------------------------------------------|
-| Trend Quality     | 25  | Stage 2/4, MA alignment (50>150>200), ADX strength         |
-| Relative Strength | 20  | RS rating vs benchmark, multi-period momentum              |
-| Setup Quality     | 20  | Pattern type (VCP, base, pullback), volume confirmation    |
+| Trend Quality     | 28  | Stage 2/4, MA alignment (50>150>200), ADX strength         |
+| Relative Strength | 22  | RS rating vs benchmark, multi-period momentum              |
+| Setup Quality     | 15  | Pattern type (VCP, base, pullback), volume confirmation    |
 | Risk/Reward       | 15  | R:R ratio (3.0+=15, 2.5+=13, 2.0+=10, 1.5+=5, less=0)      |
 | Momentum          | 10  | ROC, distance from 52w high, RSI position, EMA8 alignment  |
 | Catalyst/Timing   | 10  | Earnings proximity (-5d to +10d is post-earnings drift)    |
@@ -166,8 +166,9 @@ Validation** panel then shows, per bucket (50-59 / 60-69 / 70-79 / 80+):
 - Outcomes breakdown (target hits / stop hits / timeouts) and avg days held
 
 If 80+ doesn't beat 50-59 on expectancy, the score isn't earning its keep and
-the weights in `compute_signal` need tuning. The backtest is slow (~15–30 min
-for the full universe) — run it occasionally, not every session.
+the weights in `compute_signal` need tuning. The backtest is slow (~30–60 min
+for the full universe over 5 years of history) — run it occasionally, not
+every session.
 
 ## Files
 
