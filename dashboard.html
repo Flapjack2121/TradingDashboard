@@ -413,6 +413,66 @@
   }
   .btn-ghost:hover { color: var(--text); border-color: var(--text-faint); }
 
+  /* BACKTEST PANEL */
+  .backtest-panel { margin-bottom: 18px; }
+  .backtest-empty {
+    font-family: var(--sans); font-size: 12px; color: var(--text-dim);
+    line-height: 1.6; padding: 6px 2px;
+  }
+  .backtest-empty code {
+    background: var(--bg-2); padding: 2px 6px; color: var(--accent);
+    border-radius: 3px; font-family: var(--mono); font-size: 11px;
+  }
+  .backtest-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;
+  }
+  .bt-bucket {
+    border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg-2); padding: 12px 14px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .bt-bucket.empty { opacity: 0.4; }
+  .bt-bucket-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+  }
+  .bt-bucket-label {
+    font-family: var(--serif); font-size: 16px; font-weight: 500; color: var(--text);
+  }
+  .bt-bucket-n {
+    font-family: var(--mono); font-size: 10px; color: var(--text-faint);
+    letter-spacing: 0.08em;
+  }
+  .bt-bar-wrap {
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .bt-bar-label {
+    display: flex; justify-content: space-between;
+    font-family: var(--mono); font-size: 10px; color: var(--text-dim);
+    letter-spacing: 0.05em; text-transform: uppercase;
+  }
+  .bt-bar-value { color: var(--text); font-weight: 500; }
+  .bt-bar-value.pos { color: var(--long); }
+  .bt-bar-value.neg { color: var(--short); }
+  .bt-bar {
+    height: 6px; background: var(--bg-3); border-radius: 3px; overflow: hidden;
+  }
+  .bt-bar-fill {
+    height: 100%; border-radius: 3px;
+    transition: width 0.4s ease;
+  }
+  .bt-bar-fill.pos { background: var(--long); }
+  .bt-bar-fill.neg { background: var(--short); }
+  .bt-meta {
+    display: flex; justify-content: space-between; gap: 8px;
+    font-family: var(--mono); font-size: 9px; color: var(--text-faint);
+    letter-spacing: 0.08em; text-transform: uppercase;
+    padding-top: 4px; border-top: 1px dashed var(--border);
+  }
+  .bt-meta span strong { color: var(--text-dim); font-weight: 500; }
+  @media (max-width: 1100px) {
+    .backtest-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+
   footer {
     margin-top: 24px; padding: 14px 18px; border: 1px solid var(--border); border-radius: 8px;
     background: var(--bg-1);
@@ -489,6 +549,22 @@
       <button class="asset-tab" data-asset="asia">Asia <span class="count" id="count-asia"></span></button>
       <button class="asset-tab" data-asset="smallcap">Small Cap <span class="count" id="count-smallcap"></span></button>
       <button class="asset-tab" data-asset="em">EM <span class="count" id="count-em"></span></button>
+    </div>
+
+    <!-- BACKTEST / SCORE VALIDATION -->
+    <div class="panel backtest-panel" id="backtest-panel">
+      <div class="panel-header">
+        <h2 class="panel-title">Score Validation <span class="sub" id="backtest-sub">— no backtest data yet</span></h2>
+        <span class="panel-meta" id="backtest-meta">RUN: python3 backtest.py</span>
+      </div>
+      <div class="panel-body" id="backtest-body">
+        <div class="backtest-empty" id="backtest-empty">
+          The priority score is only useful if higher scores actually win more. Run
+          <code>python3 backtest.py</code> in this folder to walk every instrument forward
+          through ~2 years of history and check whether 80+ buckets really outperform 50-60s.
+        </div>
+        <div class="backtest-grid" id="backtest-grid" style="display:none;"></div>
+      </div>
     </div>
 
     <!-- 3-COLUMN WORKSPACE -->
@@ -806,6 +882,91 @@ function initDashboard() {
   renderChecklist('fx');
   renderJournal();
   calculatePosition();
+  loadBacktest();
+}
+
+async function loadBacktest() {
+  try {
+    const res = await fetch('backtest.json', { cache: 'no-store' });
+    if (!res.ok) return;
+    const bt = await res.json();
+    renderBacktest(bt);
+  } catch (e) {
+    // Backtest is optional — leave the "no data" placeholder in place.
+  }
+}
+
+function renderBacktest(bt) {
+  const empty = document.getElementById('backtest-empty');
+  const grid  = document.getElementById('backtest-grid');
+  const sub   = document.getElementById('backtest-sub');
+  const meta  = document.getElementById('backtest-meta');
+  if (!grid) return;
+
+  const buckets = bt.buckets || [];
+  if (buckets.length === 0) return;
+
+  empty.style.display = 'none';
+  grid.style.display = 'grid';
+
+  const ts = bt.generated_at ? new Date(bt.generated_at) : null;
+  if (sub) {
+    const total = bt.total_trades || buckets.reduce((a, b) => a + (b.n || 0), 0);
+    sub.textContent = `— ${total} historical trades · ${bt.parameters?.hold_bars || '?'}-bar hold`;
+  }
+  if (meta && ts) {
+    const days = Math.round((Date.now() - ts.getTime()) / 86400000);
+    meta.textContent = days === 0 ? 'TODAY' : `${days}D AGO`;
+  }
+
+  const maxExp = Math.max(1, ...buckets.map(b => Math.abs(b.expectancy || 0)));
+
+  grid.innerHTML = buckets.map(b => {
+    if (!b.n) {
+      return `
+        <div class="bt-bucket empty">
+          <div class="bt-bucket-head">
+            <span class="bt-bucket-label">${b.label}</span>
+            <span class="bt-bucket-n">N = 0</span>
+          </div>
+          <div style="font-family: var(--mono); font-size: 10px; color: var(--text-faint);">no signals in window</div>
+        </div>
+      `;
+    }
+    const winPct = b.win_rate ?? 0;
+    const exp    = b.expectancy ?? 0;
+    const expPct = Math.min(100, (Math.abs(exp) / maxExp) * 100);
+    const winClass = winPct >= 55 ? 'pos' : winPct >= 45 ? '' : 'neg';
+    const expClass = exp >= 0 ? 'pos' : 'neg';
+    return `
+      <div class="bt-bucket">
+        <div class="bt-bucket-head">
+          <span class="bt-bucket-label">${b.label}</span>
+          <span class="bt-bucket-n">N = ${b.n}</span>
+        </div>
+        <div class="bt-bar-wrap">
+          <div class="bt-bar-label">
+            <span>Win Rate</span>
+            <span class="bt-bar-value ${winClass}">${winPct.toFixed(1)}%</span>
+          </div>
+          <div class="bt-bar"><div class="bt-bar-fill ${winClass || 'pos'}" style="width: ${winPct}%"></div></div>
+        </div>
+        <div class="bt-bar-wrap">
+          <div class="bt-bar-label">
+            <span>Expectancy</span>
+            <span class="bt-bar-value ${expClass}">${exp >= 0 ? '+' : ''}${exp.toFixed(2)} R</span>
+          </div>
+          <div class="bt-bar"><div class="bt-bar-fill ${expClass}" style="width: ${expPct}%"></div></div>
+        </div>
+        <div class="bt-meta">
+          <span><strong>T</strong> ${b.target_hits ?? 0}</span>
+          <span><strong>S</strong> ${b.stop_hits ?? 0}</span>
+          <span><strong>X</strong> ${b.timeouts ?? 0}</span>
+          <span><strong>Avg</strong> ${b.avg_days?.toFixed(0) ?? '-'}d</span>
+        </div>
+      </div>
+    `;
+  }).join('');
 }
 
 function updateMarketPulse() {
